@@ -1,42 +1,98 @@
+// Updated MessagingPage.jsx with backend integration
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ChatList from '../components/Chat/ChatList';
-import { ChatProvider } from '../context/ChatContext';
-import ChatContainer from '../components/Chat/ChatContainer';
-import Sidebar from '../components/Sidebar';
+import ChatInterface from '../components/Chat/ChatInterface';
+import NewChatModal from '../components/Chat/NewChatModal';
+import messagingApi from '../services/messagingApi';
 import '../styles/MessagingLayout.css';
 
-const MessagingPage = ({ userRole = 'client' }) => {
+const MessagingPage = () => {
   const [selectedChat, setSelectedChat] = useState(null);
+  const [currentUserId, setCurrentUserId] = useState(null);
+  const [userRole, setUserRole] = useState(null);
+  const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
 
-  // Auto-select chat if userId is in URL (e.g., /messages?userId=user2)
+  // Get logged-in user from localStorage
+  useEffect(() => {
+    console.log('MessagingPage: Checking for logged-in user...');
+    const userStr = localStorage.getItem('devconnect_user');
+    console.log('MessagingPage: devconnect_user from localStorage:', userStr);
+    
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        console.log('MessagingPage: Parsed user:', user);
+        const userId = user.id || user.userId;
+        const role = user.userRole || user.role;
+        console.log('MessagingPage: Setting userId:', userId, 'role:', role);
+        setCurrentUserId(userId);
+        setUserRole(role);
+      } catch (error) {
+        console.error('MessagingPage: Error parsing user data:', error);
+      }
+    } else {
+      console.log('MessagingPage: No user found in localStorage');
+    }
+  }, []);
+
+  // Auto-select chat if userId is in URL (e.g., /messages?userId=2)
   useEffect(() => {
     const userId = searchParams.get('userId');
-    if (userId) {
-      // TODO: When backend is ready, fetch user details by userId
-      // For now, auto-select if user exists in chat list
-      setSelectedChat({
-        id: userId,
-        name: 'Developer', // Will come from backend
-        online: true
-      });
+    if (userId && currentUserId) {
+      // Load user details and auto-select
+      const loadUser = async () => {
+        try {
+          const status = await messagingApi.getUserStatus(parseInt(userId));
+          setSelectedChat({
+            userId: parseInt(userId),
+            userName: searchParams.get('userName') || 'User',
+            userAvatar: null,
+            userRole: searchParams.get('userRole') || 'developer',
+            userStatus: status,
+            projectId: searchParams.get('projectId') || null
+          });
+        } catch (error) {
+          console.error('Failed to load user status:', error);
+          // Fallback without status
+          setSelectedChat({
+            userId: parseInt(userId),
+            userName: searchParams.get('userName') || 'User',
+            userRole: searchParams.get('userRole') || 'developer',
+            userStatus: 'offline',
+            projectId: searchParams.get('projectId') || null
+          });
+        }
+      };
+      loadUser();
     }
-  }, [searchParams]);
+  }, [searchParams, currentUserId]);
 
   const handleSelectChat = (chat) => {
     setSelectedChat(chat);
   };
 
-  const handleBackClick = () => {
-    navigate(-1); // Go back to previous page (project detail, dashboard, etc.)
+  const handleNewChat = (user) => {
+    setSelectedChat(user);
   };
 
+  const handleBackClick = () => {
+    navigate(-1); // Go back to previous page
+  };
+
+  if (!currentUserId) {
+    return (
+      <div className="messaging-error">
+        <p>Please log in to access messaging</p>
+        <button onClick={() => navigate('/login')}>Go to Login</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="messaging-page-wrapper">
-      <Sidebar role={userRole} />
-      <div className="messaging-layout">
+    <div className="messaging-layout">
       {/* Back Button */}
       <button className="messaging-back-button" onClick={handleBackClick}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
@@ -53,17 +109,30 @@ const MessagingPage = ({ userRole = 'client' }) => {
 
       {/* Middle Panel - Chat List */}
       <ChatList 
+        currentUserId={currentUserId}
         onSelectChat={handleSelectChat} 
-        activeChat={selectedChat?.id}
+        activeChat={selectedChat?.userId}
         userRole={userRole}
+        onNewChat={() => setShowNewChatModal(true)}
+      />
+
+      {/* New Chat Modal */}
+      <NewChatModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        currentUserId={currentUserId}
+        userRole={userRole}
+        onSelectUser={handleNewChat}
       />
 
       {/* Right Panel - Chat Interface */}
       <div className="chat-main-area">
         {selectedChat ? (
-          <ChatProvider>
-            <ChatContainer />
-          </ChatProvider>
+          <ChatInterface
+            currentUserId={currentUserId}
+            recipientUserId={selectedChat.userId}
+            recipientName={selectedChat.userName}
+          />
         ) : (
           <div className="no-chat-selected">
             <div className="no-chat-content">
@@ -77,17 +146,17 @@ const MessagingPage = ({ userRole = 'client' }) => {
                 />
               </svg>
               <h2>
-                {userRole === 'client' 
+                {userRole === 'CLIENT' 
                   ? 'DevConnect Client Messaging' 
                   : 'DevConnect Developer Messaging'}
               </h2>
               <p>
-                {userRole === 'client'
+                {userRole === 'CLIENT'
                   ? 'Select a developer to start messaging'
                   : 'Select a client to start messaging'}
               </p>
               <p className="subtitle">
-                {userRole === 'client'
+                {userRole === 'CLIENT'
                   ? 'Chat with developers working on your projects'
                   : 'Chat with clients whose projects you\'ve taken'}
               </p>
@@ -95,7 +164,6 @@ const MessagingPage = ({ userRole = 'client' }) => {
           </div>
         )}
       </div>
-    </div>
     </div>
   );
 };

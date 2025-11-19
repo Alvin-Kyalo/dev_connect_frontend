@@ -1,5 +1,5 @@
 import { Routes, Route, useLocation } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import Footer from './components/Footer';
@@ -7,54 +7,148 @@ import ClientPayment from './pages/ClientPayment';
 import DeveloperPayment from './pages/DeveloperPayment';
 import MessagingPage from './pages/MessagingPage';
 import HomePage from './pages/HomePage';
+import ProfilePage from './pages/ProfilePage';
 import LoginModal from './components/Login';
 import SignupModal from './components/Signup';
 import ForgotPasswordModal from './components/ForgotPassword';
 import ResetPasswordModal from './components/ResetPassword';
 import MyProjects from './pages/MyProjectClient';
+import MyProjectsDeveloper from './pages/MyProjectsDeveloper';
+import BrowseProjects from './pages/BrowseProjects';
 import FindDevelopers from './pages/FindDevelopers';
+import RoleSelectionPage from './pages/RoleSelectionPage';
 import FindClients from './pages/FindClients';
+import DashboardClient from './pages/DashboardClient';
+import DashboardDeveloper from './pages/DashboardDeveloper';
+import Marketplace from './pages/Marketplace';
+import ProjectDetails from './pages/ProjectDetails';
+import WebSocketService from './services/WebSocketService'; 
 import './App.css';
 
 // Layout wrapper to conditionally show Navbar/Footer
-function Layout({ children, onSigninClick, onSignupClick, userRole }) {
+function Layout({ children, onSigninClick, onSignupClick, currentUser, onLogout, userRole }) {
   const location = useLocation();
-  const hideNavAndFooter = location.pathname.startsWith('/messages');
+  
+  // Only show navbar and footer on the home page
+  const showNavAndFooter = location.pathname === '/';
 
   // Show global sidebar on dashboard-like routes
   const sidebarRoutes = new Set([
     '/dashboard',
+    '/dashboard-client',
+    '/dashboard-developer',
     '/profile',
     '/projects',
     '/myProjects',
+    '/myProjectsDeveloper',
+    '/browse-projects',
+    '/marketplace',
     '/findDevelopers',
     '/findClients',
+    '/messages',
     '/settings',
     '/payments',
     '/payment',
     '/client-payments',
   ]);
   const showSidebar = sidebarRoutes.has(location.pathname);
-  const appClassName = hideNavAndFooter ? 'app no-navbar' : 'app with-navbar';
+  const appClassName = showNavAndFooter ? 'app with-navbar' : 'app no-navbar';
 
   return (
     <div className={appClassName}>
-      {!hideNavAndFooter && (
-        <Navbar onSigninClick={onSigninClick} onSignupClick={onSignupClick} />
+      {showNavAndFooter && (
+        <Navbar 
+          onSigninClick={onSigninClick} 
+          onSignupClick={onSignupClick}
+          currentUser={currentUser}
+          onLogout={onLogout}
+        />
       )}
-      <div className="app-body">
+      <div className={`app-body${showSidebar ? ' with-sidebar' : ''}`}>
         {showSidebar && <Sidebar role={userRole} />}
         <main className="main-content">
           {children}
         </main>
       </div>
-      {!hideNavAndFooter && <Footer />}
+      {showNavAndFooter && <Footer />}
     </div>
   );
 }
 
 function App() {
   const [activeAuthModal, setActiveAuthModal] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  // TEST USERS - for easy switching between client and developer
+  const TEST_USERS = {
+    client: {
+      id: 1,
+      username: 'john_client',
+      email: 'john@example.com',
+      role: 'client'
+    },
+    developer: {
+      id: 2,
+      username: 'alex_dev',
+      email: 'alex@example.com',
+      role: 'developer'
+    }
+  };
+
+  // Check if user is logged in from localStorage
+  useEffect(() => {
+    const savedUser = localStorage.getItem('devconnect_user');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      setCurrentUser(user);
+      setIsAuthenticated(true);
+      if (user.id) {
+        WebSocketService.connect(user.id);
+      }
+    }
+
+    // Cleanup: Disconnect when app unmounts
+    return () => {
+      WebSocketService.disconnect();
+    };
+  }, []);
+
+  // Function to handle successful login (called after role selection)
+  const handleLogin = (user) => {
+    setCurrentUser(user);
+    setIsAuthenticated(true);
+    localStorage.setItem('devconnect_user', JSON.stringify(user));
+    if (user.id) {
+      WebSocketService.connect(user.id);
+    }
+  };
+
+  // Function to handle logout
+  const handleLogout = () => {
+    // Clear all authentication data
+    localStorage.removeItem('devconnect_user');
+    localStorage.removeItem('accessToken');          // Backend key
+    localStorage.removeItem('devconnect_token');     // App key
+    localStorage.removeItem('token');                // Backward compatibility
+    localStorage.removeItem('devconnect_refresh_token');
+    
+    // Clear state
+    setCurrentUser(null);
+    setIsAuthenticated(false);
+    
+    // Disconnect WebSocket
+    WebSocketService.disconnect();
+  };
+
+  // Function to switch between test users
+  const switchTestUser = () => {
+    const newUser = currentUser?.id === 1 ? TEST_USERS.developer : TEST_USERS.client;
+    WebSocketService.disconnect();
+    setCurrentUser(newUser);
+    localStorage.setItem('devconnect_user', JSON.stringify(newUser));
+    WebSocketService.connect(newUser.id);
+  };
 
   const handleSigninClick = () => {
     setActiveAuthModal('login');
@@ -84,12 +178,18 @@ function App() {
     setActiveAuthModal('reset');
   };
 
-  const userRole = 'client';
+  const userRole = currentUser?.role || currentUser?.userRole?.toLowerCase() || 'client';
   const paymentElement = userRole === 'client' ? <ClientPayment /> : <DeveloperPayment />;
 
   return (
     <>
-      <Layout onSigninClick={handleSigninClick} onSignupClick={handleSignupClick} userRole={userRole}>
+      <Layout 
+        onSigninClick={handleSigninClick} 
+        onSignupClick={handleSignupClick} 
+        currentUser={currentUser}
+        onLogout={handleLogout}
+        userRole={userRole}
+      >
         <Routes>
           {/* Main Pages */}
           <Route
@@ -102,23 +202,31 @@ function App() {
               />
             )}
           />
-          <Route path="/features" element={<div className="placeholder">Features Page</div>} />
-          <Route path="/about" element={<div className="placeholder">About Page</div>} />
-          <Route path="/contact" element={<div className="placeholder">Contact Page</div>} />
-          <Route path="/services" element={<div className="placeholder">Services Page</div>} />
-          <Route path="/use-cases" element={<div className="placeholder">Use Cases Page</div>} />
-          <Route path="/pricing" element={<div className="placeholder">Pricing Page</div>} />
-          <Route path="/blog" element={<div className="placeholder">Blog Page</div>} />
-          <Route path="/privacy" element={<div className="placeholder">Privacy Policy Page</div>} />
+          <Route path="/role-selection" element={<RoleSelectionPage onRoleSelect={handleLogin} />} />
 
-        {/* Routes that render with the sidebar layout */}
-          <Route path="/dashboard" element={<div className="placeholder">Dashboard Page</div>} />
-          <Route path="/profile" element={<div className="placeholder">Profile Page</div>} />
+          {/* Dashboard Routes */}
+          <Route 
+            path="/dashboard" 
+            element={userRole === 'client' ? <DashboardClient /> : <DashboardDeveloper />} 
+          />
+          <Route path="/dashboard-client" element={<DashboardClient />} />
+          <Route path="/dashboard-developer" element={<DashboardDeveloper />} />
+          
+          <Route path="/profile" element={<ProfilePage currentUser={currentUser} />} />
           <Route path="/projects" element={<MyProjects />} />
           <Route path="/myProjects" element={<MyProjects />} />
+          <Route path="/myProjectsDeveloper" element={<MyProjectsDeveloper />} />
+          <Route path="/browse-projects" element={<BrowseProjects />} />
+          <Route path="/projects/:projectId" element={<ProjectDetails />} />
+          <Route path="/marketplace" element={<Marketplace />} />
           <Route path="/findDevelopers" element={<FindDevelopers />} />
           <Route path="/findClients" element={<FindClients />} />
-          <Route path="/messages" element={<MessagingPage userRole={userRole} />} />
+          
+          <Route 
+            path="/messages" 
+            element={<MessagingPage userRole={userRole} currentUser={currentUser} onSwitchUser={switchTestUser} />} 
+          />
+          
           <Route path="/client-payments" element={<ClientPayment />} />
           <Route path="/payments" element={paymentElement} />
           <Route path="/payment" element={paymentElement} />

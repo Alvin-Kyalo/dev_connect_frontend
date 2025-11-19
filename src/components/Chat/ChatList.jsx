@@ -1,93 +1,113 @@
-import { useState } from 'react';
+// Updated ChatList component with backend integration
+import { useState, useEffect } from 'react';
+import messagingApi from '../../services/messagingApi';
 import '../../styles/ChatList.css';
 
-const ChatList = ({ onSelectChat, activeChat, userRole = 'client' }) => {
+const ChatList = ({ onSelectChat, activeChat, currentUserId, userRole = 'client', onNewChat }) => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [chats, setChats] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  // Mock chat data - will be replaced with real data later
-  // For CLIENT: Shows only developers they've worked with on projects
-  // For DEVELOPER: Shows only clients whose projects they've taken
-  const allChats = [
-    // Developers (shown to clients)
-    {
-      id: 'dev1',
-      name: 'Alex Developer',
-      lastMessage: 'That sounds good!',
-      timestamp: '10:56',
-      unread: 2,
-      online: true,
-      avatar: null,
-      type: 'developer',
-      projectId: 'proj1'
-    },
-    {
-      id: 'dev2',
-      name: 'Mike Frontend',
-      lastMessage: 'I have experience with React...',
-      timestamp: 'Yesterday',
-      unread: 0,
-      online: false,
-      avatar: null,
-      type: 'developer',
-      projectId: 'proj2'
-    },
-    {
-      id: 'dev3',
-      name: 'Sarah Fullstack',
-      lastMessage: 'I can help with the API integration',
-      timestamp: 'Friday',
-      unread: 0,
-      online: false,
-      avatar: null,
-      type: 'developer',
-      projectId: 'proj3'
-    },
-    // Clients (shown to developers)
-    {
-      id: 'client1',
-      name: 'John Client',
-      lastMessage: 'When can you start the project?',
-      timestamp: '11:30',
-      unread: 1,
-      online: true,
-      avatar: null,
-      type: 'client',
-      projectId: 'proj4'
-    },
-    {
-      id: 'client2',
-      name: 'Emma Business',
-      lastMessage: 'Thanks for the update!',
-      timestamp: 'Yesterday',
-      unread: 0,
-      online: true,
-      avatar: null,
-      type: 'client',
-      projectId: 'proj5'
-    },
-    {
-      id: 'client3',
-      name: 'David Startup',
-      lastMessage: 'Can we discuss the budget?',
-      timestamp: 'Monday',
-      unread: 3,
-      online: false,
-      avatar: null,
-      type: 'client',
-      projectId: 'proj6'
-    },
-  ];
+  const loadChats = async () => {
+    if (!currentUserId) {
+      console.log('ChatList: No currentUserId provided');
+      setLoading(false);
+      return;
+    }
 
-  // Filter chats based on user role
-  // Client sees only developers, Developer sees only clients
-  const chats = userRole === 'client' 
-    ? allChats.filter(chat => chat.type === 'developer')
-    : allChats.filter(chat => chat.type === 'client');
+    console.log('ChatList: Loading chats for userId:', currentUserId);
+    
+    try {
+      const data = await messagingApi.getUserChats(currentUserId);
+      console.log('ChatList: Loaded chats:', data);
+      setChats(data);
+      setError(null);
+    } catch (err) {
+      console.error('ChatList: Failed to load chats:', err);
+      console.error('ChatList: Error details:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      });
+      
+      // Check if it's a network/backend error
+      if (err.code === 'ERR_NETWORK' || !err.response) {
+        setError('Cannot connect to backend server. Please ensure the backend is running on localhost:8081');
+      } else if (err.response?.status === 401) {
+        setError('Authentication failed. Please log in again.');
+      } else {
+        setError('Failed to load conversations');
+      }
+      
+      // Fallback to empty chats on error
+      setChats([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    loadChats();
+    
+    // Refresh chats every 30 seconds
+    const interval = setInterval(loadChats, 30000);
+    
+    return () => clearInterval(interval);
+  }, [currentUserId]);
 
   const filteredChats = chats.filter(chat =>
-    chat.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
+    chat.userName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (chat.lastMessage && chat.lastMessage.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+    
+    return date.toLocaleDateString();
+  };
+
+  if (loading) {
+    return (
+      <div className="chat-list-loading">
+        <div className="spinner"></div>
+        <p>Loading conversations...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="chat-list-error">
+        <p>{error}</p>
+        <button onClick={loadChats}>Retry</button>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="chat-list-panel">
+        <div className="chat-list-header">
+          <h2>Messages</h2>
+        </div>
+        <div className="loading">Loading chats...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-list-panel">
@@ -95,7 +115,7 @@ const ChatList = ({ onSelectChat, activeChat, userRole = 'client' }) => {
       <div className="chat-list-header">
         <h2>Messages</h2>
         <div className="header-actions">
-          <button className="icon-btn" title="New chat">
+          <button className="icon-btn" title="New chat" onClick={onNewChat}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
               <path d="M12 5V19M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
             </svg>
@@ -138,40 +158,43 @@ const ChatList = ({ onSelectChat, activeChat, userRole = 'client' }) => {
         {filteredChats.length === 0 ? (
           <div className="no-chats">
             <p>
-              {userRole === 'client' 
+              {userRole === 'CLIENT' 
                 ? 'No developers on your projects yet' 
                 : 'No clients for your projects yet'}
+            </p>
+            <p style={{ fontSize: '0.85rem', color: '#999', marginTop: '0.5rem' }}>
+              Click the <strong>+ button</strong> above to start a new conversation
             </p>
           </div>
         ) : (
           filteredChats.map((chat) => (
             <div
-              key={chat.id}
-              className={`chat-item ${activeChat === chat.id ? 'active' : ''}`}
+              key={chat.userId || chat.id}
+              className={`chat-item ${activeChat === chat.userId ? 'active' : ''}`}
               onClick={() => onSelectChat(chat)}
             >
               <div className="chat-avatar">
-                {chat.avatar ? (
-                  <img src={chat.avatar} alt={chat.name} />
+                {chat.userAvatar ? (
+                  <img src={chat.userAvatar} alt={chat.userName} />
                 ) : (
                   <div className="avatar-placeholder">
-                    {chat.name.charAt(0).toUpperCase()}
+                    {chat.userName.charAt(0).toUpperCase()}
                   </div>
                 )}
-                {chat.online && <span className="online-dot"></span>}
+                {chat.userStatus === 'online' && <span className="online-dot"></span>}
               </div>
               
               <div className="chat-info">
                 <div className="chat-header-row">
-                  <h3 className="chat-name">{chat.name}</h3>
-                  <span className="chat-time">{chat.timestamp}</span>
+                  <h3 className="chat-name">{chat.userName}</h3>
+                  <span className="chat-time">{formatTimestamp(chat.lastMessageTime)}</span>
                 </div>
                 <div className="chat-message-row">
                   <p className="chat-last-message">
-                    {chat.lastMessage}
+                    {chat.lastMessage || 'No messages yet'}
                   </p>
-                  {chat.unread > 0 && (
-                    <span className="unread-badge">{chat.unread}</span>
+                  {chat.unreadCount > 0 && (
+                    <span className="unread-badge">{chat.unreadCount}</span>
                   )}
                 </div>
               </div>

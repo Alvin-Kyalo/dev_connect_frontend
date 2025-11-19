@@ -1,103 +1,237 @@
-import React, { useState } from "react";
-import Sidebar from "../components/Sidebar";
-import Navbar from "../components/Navbar";
+import React, { useState, useEffect } from "react";
+import { useLocation } from "react-router-dom";
+import ClientSetup from "../components/ClientSetup";
+import CreateProjectModal from "../components/CreateProjectModal";
+import ProjectCard from "../components/ProjectCard";
+import ApiService from "../services/ApiService";
+import { mapBackendProjectToFrontend } from "../utils/projectMapper";
 import "../styles/MyProjects.css";
 
 const MyProjects = () => {
-  const [formData, setFormData] = useState({
-    title: "",
-    budget: "",
-    timeline: "",
-    description: "",
-    files: [],
-  });
+  const location = useLocation();
+  const [showSetup, setShowSetup] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [activeTab, setActiveTab] = useState("all"); // all, in-progress, completed
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+  useEffect(() => {
+    // Check if we should show the setup overlay
+    if (location.state?.showSetup && location.state?.role === 'client') {
+      setShowSetup(true);
+    }
+
+    // Load current user and fetch projects
+    loadUserAndProjects();
+  }, [location]);
+
+  const loadUserAndProjects = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      console.log('🔍 [MyProjects] Loading client projects...');
+
+      // Get current user from localStorage
+      const userStr = localStorage.getItem('devconnect_user');
+      if (!userStr) {
+        console.error('❌ [MyProjects] No user in localStorage');
+        setError('No user logged in. Please login first.');
+        setLoading(false);
+        return;
+      }
+
+      const user = JSON.parse(userStr);
+      console.log('👤 [MyProjects] Current user:', {
+        id: user.id,
+        userId: user.userId,
+        email: user.email,
+        role: user.role
+      });
+
+      // Fetch projects from backend using clientId
+      if (user.id || user.userId) {
+        const clientId = user.id || user.userId;
+        console.log(`📡 [MyProjects] Fetching projects for client ID: ${clientId}`);
+        console.log(`📡 [MyProjects] API URL: http://localhost:8081/api/projects/client/${clientId}`);
+        
+        const backendProjects = await ApiService.getProjectsByClient(clientId);
+        console.log('✅ [MyProjects] Backend response:', backendProjects);
+        console.log(`✅ [MyProjects] Number of projects: ${backendProjects.length}`);
+        
+        // Map backend DTOs to frontend shape
+        const mappedProjects = backendProjects.map(mapBackendProjectToFrontend);
+        console.log('✅ [MyProjects] Mapped projects:', mappedProjects);
+        
+        setProjects(mappedProjects);
+        console.log(`✅ [MyProjects] Projects loaded successfully: ${mappedProjects.length} projects`);
+      } else {
+        console.error('❌ [MyProjects] User ID not found in user object:', user);
+        setError('User ID not found. Cannot fetch projects.');
+      }
+
+      setLoading(false);
+    } catch (err) {
+      console.error('❌ [MyProjects] Error loading projects:', err);
+      console.error('❌ [MyProjects] Error details:', {
+        message: err.message,
+        stack: err.stack
+      });
+      setError(err.message || 'Failed to load projects. Please try again.');
+      setLoading(false);
+    }
   };
 
-  const handleFileChange = (e) => {
-    setFormData({ ...formData, files: Array.from(e.target.files) });
+  const handleSetupComplete = (profileData) => {
+    // Create client user with profile data
+    const clientUser = {
+      id: 1,
+      email: 'john@example.com',
+      role: 'client',
+      ...profileData,
+    };
+    
+    // Save to localStorage
+    localStorage.setItem('devconnect_user', JSON.stringify(clientUser));
+    
+    // Close setup overlay
+    setShowSetup(false);
   };
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    console.log("Saved Project:", formData);
-    alert("Project saved successfully!");
+  const handleSetupClose = () => {
+    setShowSetup(false);
   };
+
+  const handleCreateProject = async (newProject) => {
+    try {
+      // Add to state optimistically (will be replaced by backend data on refresh)
+      const mappedProject = mapBackendProjectToFrontend(newProject);
+      setProjects(prev => [mappedProject, ...prev]);
+      
+      // Optionally reload from backend to ensure consistency
+      // await loadUserAndProjects();
+    } catch (err) {
+      console.error('Failed to add project to list:', err);
+      // Reload from backend on error
+      await loadUserAndProjects();
+    }
+  };
+
+  const filterProjects = () => {
+    switch (activeTab) {
+      case "in-progress":
+        return projects.filter(p => p.status === "in-progress");
+      case "completed":
+        return projects.filter(p => p.status === "completed");
+      default:
+        return projects;
+    }
+  };
+
+  const filteredProjects = filterProjects();
 
   return (
-    
-        <div className="content">
-          <h2>My Projects</h2>
-          <p className="subtitle">
-            Track progress and manage your projects with ease.
-          </p>
+    <>
+      <div className="projects-page">
+        <div className="projects-header">
+          <h1>My Projects</h1>
+          <p className="subtitle">Track and manage all your projects in one place</p>
+        </div>
 
-          <form onSubmit={handleSubmit} className="form-card">
-            <label>Project Title</label>
-            <input
-              type="text"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              placeholder="Enter project name"
-            />
+        {/* Loading State */}
+        {loading && (
+          <div className="loading-state">
+            <div className="spinner"></div>
+            <p>Loading projects...</p>
+          </div>
+        )}
 
-            <div className="form-row">
-              <div>
-                <label>Budget Range</label>
-                <input
-                  type="text"
-                  name="budget"
-                  value={formData.budget}
-                  onChange={handleChange}
-                  placeholder="e.g. $500 - $2000"
-                />
-              </div>
-              <div>
-                <label>Timeline</label>
-                <input
-                  type="text"
-                  name="timeline"
-                  value={formData.timeline}
-                  onChange={handleChange}
-                  placeholder="e.g. 2-4 weeks"
-                />
-              </div>
+        {/* Error State */}
+        {error && !loading && (
+          <div className="error-state">
+            <div className="error-icon">⚠️</div>
+            <h3>Error loading projects</h3>
+            <p>{error}</p>
+            <button onClick={loadUserAndProjects} className="retry-btn">
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* Content */}
+        {!loading && !error && (
+          <>
+            {/* Tabs */}
+            <div className="projects-tabs">
+              <button
+                className={`tab-btn ${activeTab === "all" ? "active" : ""}`}
+                onClick={() => setActiveTab("all")}
+              >
+                All Projects
+                <span className="tab-count">{projects.length}</span>
+              </button>
+              <button
+                className={`tab-btn ${activeTab === "in-progress" ? "active" : ""}`}
+                onClick={() => setActiveTab("in-progress")}
+              >
+                In Progress
+                <span className="tab-count">
+                  {projects.filter(p => p.status === "in-progress").length}
+                </span>
+              </button>
+              <button
+                className={`tab-btn ${activeTab === "completed" ? "active" : ""}`}
+                onClick={() => setActiveTab("completed")}
+              >
+                Completed
+                <span className="tab-count">
+                  {projects.filter(p => p.status === "completed").length}
+                </span>
+              </button>
             </div>
 
-            <label>Project Description</label>
-            <textarea
-              name="description"
-              rows="3"
-              value={formData.description}
-              onChange={handleChange}
-              placeholder="Describe your project"
-            ></textarea>
+            {/* Projects Grid */}
+            <div className="projects-content">
+              {filteredProjects.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-icon">📋</div>
+                  <h3>No projects yet</h3>
+                  <p>Click the + button to create your first project</p>
+                </div>
+              ) : (
+                <div className="projects-grid">
+                  {filteredProjects.map((project) => (
+                    <ProjectCard key={project.id} project={project} />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-            <label>Upload Files</label>
-            <input
-              type="file"
-              multiple
-              onChange={handleFileChange}
-              className="file-input"
-            />
+        {/* Floating Add Button */}
+        <button
+          className="floating-add-btn"
+          onClick={() => setShowCreateModal(true)}
+          aria-label="Create new project"
+        >
+          +
+        </button>
+      </div>
 
-            {formData.files.length > 0 && (
-              <ul className="file-list">
-                {formData.files.map((file, index) => (
-                  <li key={index}>{file.name}</li>
-                ))}
-              </ul>
-            )}
-
-            <button type="submit" className="save-btn">
-              Save Project
-            </button>
-          </form>
-        </div>
-      
+      {/* Modals */}
+      <ClientSetup
+        isOpen={showSetup}
+        onClose={handleSetupClose}
+        onComplete={handleSetupComplete}
+      />
+      <CreateProjectModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+        onCreateProject={handleCreateProject}
+      />
+    </>
   );
 };
 

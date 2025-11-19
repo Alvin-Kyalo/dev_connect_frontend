@@ -16,13 +16,15 @@ import Logo from "./Logo";
 
 const navItems = [
     { to: "/dashboard", icon: DashboardIcon, label: "Dashboard" },
-    { to: "/profile", icon: ProfileIcon, label: "Profile" },
-    { to: "/projects", icon: ProjectsIcon, label: "Projects", allowedRoles: "client" },
-    { to: "/findClients", icon: FindClientsIcon, label: "Find Clients", allowedRoles: "developer" },
-    { to: "/findDevelopers", icon: FindDeverlopersIcon, label: "Find Developers", allowedRoles: "client" },
+    { to: "/projects", icon: ProjectsIcon, label: "Projects", allowedRoles: ["client"] },
+    { to: "/myProjectsDeveloper", icon: ProjectsIcon, label: "My Projects", allowedRoles: ["developer"] },
+    { to: "/browse-projects", icon: ProjectsIcon, label: "Browse Projects", allowedRoles: ["developer"] },
+    { to: "/marketplace", icon: ProjectsIcon, label: "Marketplace", allowedRoles: ["developer"] },
+    { to: "/findClients", icon: FindClientsIcon, label: "Find Clients", allowedRoles: ["developer"] },
+    { to: "/findDevelopers", icon: FindDeverlopersIcon, label: "Find Developers", allowedRoles: ["client"] },
     { to: "/messages", icon: MessagesIcon, label: "Messages" },
     { to: "/payment", icon: PaymentIcon, label: "Payment", allowedRoles: ["client", "developer"] },
-    { to: "/settings", icon: SettingsIcon, label: "Settings" },
+    { to: "/profile", icon: ProfileIcon, label: "Profile" },
     { to: "/logout", icon: LogoutIcon, label: "Logout" },
 ];
 
